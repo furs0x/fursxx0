@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今日校园设备信息读取测试（仅本机自查）</title>
+<style>
+  body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;margin:16px;color:#222;line-height:1.6}
+  h1{font-size:18px;margin:0 0 4px}
+  p.note{font-size:13px;color:#666;margin:0 0 12px}
+  button{font-size:16px;padding:10px 18px;margin:6px 6px 6px 0;border:0;border-radius:8px;background:#1677ff;color:#fff}
+  button.secondary{background:#eee;color:#222}
+  table{border-collapse:collapse;width:100%;margin-top:12px;font-size:14px}
+  td{border:1px solid #ddd;padding:8px;vertical-align:top}
+  td.k{width:110px;color:#666;white-space:nowrap}
+  td.v{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+  #log{margin-top:12px;padding:10px;background:#f6f6f6;border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;word-break:break-all}
+  #result{display:none}
+</style>
+</head>
+<body>
+<h1>今日校园设备信息读取测试</h1>
+<p class="note">这个页面只能在今日校园 App 内的网页里跑才有意义。在普通浏览器（微信、Chrome、Safari）里打开，只会显示“桥不存在”，这是正常的，不代表失败。</p>
+
+<button id="readBtn">读取设备信息</button>
+<button class="secondary" id="copyBtn">复制 uuid 到剪贴板</button>
+
+<div id="log">等待操作……</div>
+
+<div id="result">
+<table>
+  <tr><td class="k">uuid（deviceId）</td><td class="v" id="f_uuid">-</td></tr>
+  <tr><td class="k">model（机型）</td><td class="v" id="f_model">-</td></tr>
+  <tr><td class="k">manufacturer（厂商）</td><td class="v" id="f_manufacturer">-</td></tr>
+  <tr><td class="k">platform</td><td class="v" id="f_platform">-</td></tr>
+  <tr><td class="k">version（系统版本）</td><td class="v" id="f_version">-</td></tr>
+  <tr><td class="k">isVirtual</td><td class="v" id="f_isVirtual">-</td></tr>
+  <tr><td class="k">serial</td><td class="v" id="f_serial">-</td></tr>
+  <tr><td class="k">screenWidth / Height</td><td class="v" id="f_screen">-</td></tr>
+</table>
+</div>
+
+<script>
+var logEl = document.getElementById('log');
+function log(msg) {
+  logEl.textContent += '\n' + msg;
+}
+function show(info) {
+  document.getElementById('result').style.display = 'block';
+  document.getElementById('f_uuid').textContent = info.uuid || '-';
+  document.getElementById('f_model').textContent = info.model || '-';
+  document.getElementById('f_manufacturer').textContent = info.manufacturer || '-';
+  document.getElementById('f_platform').textContent = info.platform || '-';
+  document.getElementById('f_version').textContent = info.version || '-';
+  document.getElementById('f_isVirtual').textContent = (info.isVirtual === undefined ? '-' : String(info.isVirtual));
+  document.getElementById('f_serial').textContent = info.serial || '-';
+  document.getElementById('f_screen').textContent = (info.screenWidth || '-') + ' / ' + (info.screenHeight || '-');
+  window.__lastUuid = info.uuid || '';
+  log('读取成功。');
+}
+function diagnose() {
+  log('UA: ' + navigator.userAgent);
+  log('window.cordova: ' + (typeof window.cordova));
+  log('window.mamp: ' + (typeof window.mamp));
+  log('window.mamp && mamp.device: ' + (typeof (window.mamp && window.mamp.device)));
+}
+function tryRead() {
+  logEl.textContent = '开始读取……';
+  diagnose();
+  // 路径 1：mamp.device.getInfo（今日校园插件 JS 的标准写法）
+  try {
+    if (window.mamp && window.mamp.device && typeof window.mamp.device.getInfo === 'function') {
+      log('走 mamp.device.getInfo …');
+      window.mamp.device.getInfo(function (info) {
+        show(info);
+      }, function (err) {
+        log('mamp.device.getInfo 失败：' + JSON.stringify(err));
+        tryCordovaExec();
+      });
+      return;
+    }
+  } catch (e) { log('mamp.device.getInfo 异常：' + e.message); }
+  // 路径 2：deviceready 后 mamp.device 上已自动填好的字段
+  try {
+    if (window.mamp && window.mamp.device && window.mamp.device.uuid) {
+      log('走 mamp.device 已填字段 …');
+      show(window.mamp.device);
+      return;
+    }
+  } catch (e) { log('mamp.device 字段读取异常：' + e.message); }
+  tryCordovaExec();
+}
+function tryCordovaExec() {
+  // 路径 3：直接 cordova.exec 调 MAMPDevice 插件
+  try {
+    if (window.cordova && typeof window.cordova.exec === 'function') {
+      log('走 cordova.exec MAMPDevice/getDeviceInfo …');
+      window.cordova.exec(function (info) {
+        show(info);
+      }, function (err) {
+        log('cordova.exec 失败：' + JSON.stringify(err));
+        log('结论：桥存在但 getDeviceInfo 被拦或不可用。');
+      }, 'MAMPDevice', 'getDeviceInfo', []);
+      return;
+    }
+  } catch (e) { log('cordova.exec 异常：' + e.message); }
+  log('结论：页面里没有 mamp / cordova 桥。这个页面没有跑进今日校园的 Cordova WebView，或者该页面被服务端白名单拦住了桥。');
+}
+document.getElementById('readBtn').addEventListener('click', tryRead);
+document.addEventListener('deviceready', function () {
+  log('收到 deviceready 事件。');
+  if (!window.__tried) { window.__tried = true; tryRead(); }
+}, false);
+document.getElementById('copyBtn').addEventListener('click', function () {
+  var uuid = window.__lastUuid || '';
+  if (!uuid) { log('还没有读到 uuid，先点“读取设备信息”。'); return; }
+  try {
+    if (window.mamp && window.mamp.systemAbility && typeof window.mamp.systemAbility.setPasteboard === 'function') {
+      window.mamp.systemAbility.setPasteboard(uuid);
+      log('已通过 systemAbility.setPasteboard 复制。');
+      return;
+    }
+  } catch (e) {}
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(uuid).then(function () {
+      log('已通过浏览器剪贴板复制。');
+    }, function () {
+      log('浏览器剪贴板复制失败，请手动长按表格里的 uuid 复制。');
+    });
+  } else {
+    log('请手动长按表格里的 uuid 复制。');
+  }
+});
+// 页面打开后先做一次诊断，方便判断桥在不在
+diagnose();
+</script>
+</body>
+</html>
